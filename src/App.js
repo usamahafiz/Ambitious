@@ -9,6 +9,8 @@ import Testimonials from './components/testimonial';
 import Premium from './components/premium';
 import FormAuth from './components/formauth';
 import Footer from './components/Footer/footer';
+import ManageProducts from './pages/AdminDashboard/ManageTopic';
+import ResponsiveForm from './pages/AdminDashboard/AddTopic';
 
 
 
@@ -17,13 +19,15 @@ import Footer from './components/Footer/footer';
 function App() {
   return (
     <div>
-      <Header />
+      {/* <Header />
       <Hero />
       <OurTrack />
       <Premium />
       <Testimonials />
       <FormAuth />
-      <Footer />
+      <Footer /> */}
+      <ResponsiveForm/>
+      <ManageProducts/>
     
     
       
