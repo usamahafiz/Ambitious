@@ -26,7 +26,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { fireStore, storage } from "../../config/firebase";
-import { deleteObject, ref } from "firebase/storage";
+import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 const ManageProducts = () => {
   const [products, setProducts] = useState([]);
@@ -38,7 +38,6 @@ const ManageProducts = () => {
   const [deleting, setDeleting] = useState(false);
   const [classes, setClasses] = useState([]);
   const [newFiles, setNewFiles] = useState([]);
-
 
   useEffect(() => {
     fetchProducts();
@@ -112,28 +111,28 @@ const ManageProducts = () => {
     setLoading(false);
   };
 
-
-
   const handleRemoveFile = async (index, productId) => {
     const fileURL = editingProduct.fileURLs[index];
-  
+
     if (!fileURL) return;
-  
+
     // Extract file reference from the URL
     const fileRef = ref(storage, fileURL);
-  
+
     try {
       // Step 1: Delete file from Firebase Storage
       await deleteObject(fileRef);
       console.log("File deleted successfully from Storage");
-  
+
       // Step 2: Update Firestore to remove the file URL
-      const updatedFiles = editingProduct.fileURLs.filter((_, i) => i !== index);
+      const updatedFiles = editingProduct.fileURLs.filter(
+        (_, i) => i !== index
+      );
       const productRef = doc(fireStore, "topics", productId); // Adjust collection name if needed
-  
+
       await updateDoc(productRef, { fileURLs: updatedFiles });
       console.log("File URL removed from Firestore");
-  
+
       // Step 3: Update local state
       setEditingProduct((prev) => ({ ...prev, fileURLs: updatedFiles }));
     } catch (error) {
@@ -141,28 +140,45 @@ const ManageProducts = () => {
     }
   };
 
-  
   const handleUpdate = async (values) => {
     setLoading(true);
     try {
-      const updatedValues = {
-        ...values,
-        timestamp: serverTimestamp(),
-      };
-
-      await updateDoc(
-        doc(fireStore, "topics", editingProduct.id),
-        updatedValues
-      );
+      const updatedValues = { ...values, timestamp: serverTimestamp() };
+      const productRef = doc(fireStore, "topics", editingProduct.id);
+  
+      // Upload new files if any
+      if (newFiles.length > 0) {
+        const uploadedFileURLs = await Promise.all(
+          newFiles.map(async (file) => {
+            const fileRef = ref(storage, `topics/${editingProduct.id}/${file.name}`);
+            await uploadBytes(fileRef, file);
+            return await getDownloadURL(fileRef);
+          })
+        );
+  
+        // Merge old and new file URLs
+        updatedValues.fileURLs = [
+          ...(editingProduct.fileURLs || []),
+          ...uploadedFileURLs,
+        ];
+      }
+  
+      // Update Firestore
+      await updateDoc(productRef, updatedValues);
       message.success("Product updated successfully!");
+  
+      // Reset modal state
+      setNewFiles([]); // Clear uploaded files list
       handleModalClose();
-      fetchProducts();
+      fetchProducts(); // Refresh product list
     } catch (error) {
       message.error("Failed to update product.");
       console.error(error);
+    } finally {
       setLoading(false);
     }
   };
+  
 
   const columns = [
     { title: "Topic", dataIndex: "topic", key: "topic" },
@@ -262,40 +278,50 @@ const ManageProducts = () => {
           </Form.Item>
 
           <Form.Item label="Uploaded Files">
-  {editingProduct?.fileURLs?.length > 0 ? (
-    editingProduct.fileURLs.map((url, index) => (
-      <div key={index} style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
-        <a href={url} target="_blank" rel="noopener noreferrer" style={{ marginRight: "8px" }}>
-          View File {index + 1}
-        </a>
-        <Button
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleRemoveFile(index, editingProduct?.id)} // ✅ Ensure id is passed
-        />
-      </div>
-    ))
-  ) : (
-    <p>No previous files</p>
-  )}
+            {editingProduct?.fileURLs?.length > 0 ? (
+              editingProduct.fileURLs.map((url, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ marginRight: "8px" }}
+                  >
+                    View File {index + 1}
+                  </a>
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => handleRemoveFile(index, editingProduct?.id)} // ✅ Ensure id is passed
+                  />
+                </div>
+              ))
+            ) : (
+              <p>No previous files</p>
+            )}
 
-  <Upload
-    multiple
-    beforeUpload={(file) => {
-      setNewFiles((prev) => [...prev, file]);
-      return false;
-    }}
-    fileList={newFiles}
-    onRemove={(file) => {
-      setNewFiles((prev) => prev.filter((f) => f !== file));
-    }}
-  >
-    <Button icon={<UploadOutlined />}>Upload Files</Button>
-  </Upload>
-</Form.Item>
-
-
+            <Upload
+              multiple
+              beforeUpload={(file) => {
+                setNewFiles((prev) => [...prev, file]);
+                return false;
+              }}
+              fileList={newFiles}
+              onRemove={(file) => {
+                setNewFiles((prev) => prev.filter((f) => f !== file));
+              }}
+            >
+              <Button icon={<UploadOutlined />}>Upload Files</Button>
+            </Upload>
+          </Form.Item>
 
           <Form.Item>
             <Button type="primary" htmlType="submit" block loading={loading}>
